@@ -25,7 +25,6 @@ export default {
 
     async execute(interaction) {
         try {
-            // Sprawdzenie czy na serwerze
             if (!interaction.inGuild()) {
                 throw new TitanBotError(
                     'Giveaway command used outside guild',
@@ -35,7 +34,6 @@ export default {
                 );
             }
 
-            // Sprawdzenie uprawnień
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
                 throw new TitanBotError(
                     'User lacks ManageGuild permission',
@@ -49,7 +47,6 @@ export default {
 
             const messageId = interaction.options.getString("id_wiadomosci");
 
-            // Walidacja ID
             if (!messageId || !/^\d+$/.test(messageId)) {
                 throw new TitanBotError(
                     'Invalid message ID format',
@@ -59,7 +56,6 @@ export default {
                 );
             }
 
-            // Pobranie giveaway z bazy
             const giveaways = await getGuildGiveaways(interaction.client, interaction.guildId);
             const giveaway = giveaways.find(g => g.messageId === messageId);
 
@@ -72,7 +68,6 @@ export default {
                 );
             }
 
-            // Pobranie kanału i wiadomości
             const channel = await interaction.client.channels.fetch(giveaway.channelId).catch(err => {
                 logger.warn(`Could not fetch channel ${giveaway.channelId}:`, err.message);
                 return null;
@@ -107,27 +102,23 @@ export default {
 
             // Sprawdzenie, czy giveaway ma z góry ustalonych zwycięzców
             if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
-                // 🔹 Użyj preset zwycięzców (bez losowania)
+                // Użyj preset zwycięzców (bez losowania)
                 winners = giveaway.presetWinners.slice(0, giveaway.winnerCount);
                 participantCount = giveaway.participants?.length || 0;
 
-                // Aktualizacja giveaway jako zakończony
                 giveaway.isEnded = true;
                 giveaway.ended = true;
                 giveaway.endTime = Date.now();
-                // Zapisanie w bazie
                 await saveGiveaway(interaction.client, interaction.guildId, giveaway);
 
                 logger.info(`Giveaway ended with preset winners (${winners.length}) for message ${messageId}`);
 
-                // Symulacja obiektu wynikowego (dla zgodności z dalszym kodem)
                 endResult = {
                     giveaway: giveaway,
                     winners: winners,
                     participantCount: participantCount
                 };
             } else {
-                // 🔹 Normalne zakończenie przez serwis (losowanie)
                 endResult = await endGiveawayService(
                     interaction.client,
                     giveaway,
@@ -140,34 +131,24 @@ export default {
 
             const updatedGiveaway = endResult.giveaway;
 
-            // Aktualizacja wiadomości giveaway (embed i przyciski)
+            // Aktualizacja wiadomości giveaway (embed i przyciski) – BEZ dodatkowego pola o preset winners
             const newEmbed = createGiveawayEmbed(updatedGiveaway, "ended", winners);
             const newRow = createGiveawayButtons(true);
 
-            // Dodanie informacji o preset zwycięzcach (jeśli byli)
-            if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
-                newEmbed.addFields({
-                    name: '👑 **Z góry ustaleni zwycięzcy**',
-                    value: winners.map(id => `<@${id}>`).join(', '),
-                    inline: false
-                });
-            }
-
+            // 🚫 USUNIĘTO publiczne pole "Z góry ustaleni zwycięzcy"
             await message.edit({
                 content: "🎉 **GIVEAWAY ZAKOŃCZONY** 🎉",
                 embeds: [newEmbed],
                 components: [newRow],
             });
 
-            // Ogłoszenie zwycięzców
+            // Ogłoszenie zwycięzców – BEZ informacji o ustawieniu z góry
             if (winners.length > 0) {
                 const winnerMentions = winners.map(id => `<@${id}>`).join(", ");
                 let winnerMessage = `🎉 **GRATULACJE** ${winnerMentions}! Wygrałeś/aś giveaway **${updatedGiveaway.prize}**! 🎉\n`;
                 winnerMessage += `Skontaktuj się z organizatorem <@${updatedGiveaway.hostId}>, aby odebrać nagrodę.`;
 
-                if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
-                    winnerMessage += `\n\n👑 *Zwycięzcy zostali ustaleni z góry przez organizatora.*`;
-                }
+                // 🚫 USUNIĘTO dopisek o z góry ustalonych zwycięzcach
 
                 const winnerPingMsg = await channel.send({ content: winnerMessage });
                 updatedGiveaway.winnerPingMessageId = winnerPingMsg.id;
@@ -175,7 +156,6 @@ export default {
 
                 logger.info(`Giveaway ended with ${winners.length} winner(s): ${messageId}`);
 
-                // Logowanie zdarzenia (po polsku)
                 try {
                     await logEvent({
                         client: interaction.client,
@@ -189,7 +169,7 @@ export default {
                                 { name: '🎁 Nagroda', value: updatedGiveaway.prize || 'Tajemnicza nagroda!', inline: true },
                                 { name: '🏆 Zwycięzcy', value: winnerMentions, inline: false },
                                 { name: '👥 Liczba uczestników', value: participantCount.toString(), inline: true },
-                                ...(giveaway.presetWinners ? [{ name: '👑 Typ', value: 'Z góry ustaleni', inline: true }] : [])
+                                ...(giveaway.presetWinners ? [{ name: '👑 Typ (log)', value: 'Z góry ustaleni', inline: true }] : [])
                             ]
                         }
                     });
@@ -205,11 +185,11 @@ export default {
 
             logger.info(`Giveaway successfully ended by ${interaction.user.tag}: ${messageId}`);
 
-            // Odpowiedź dla osoby kończącej (ephemeral)
+            // Odpowiedź dla osoby kończącej (ephemeral) – tutaj możesz zostawić informację o preset, bo tylko host widzi
             let replyText = `✅ Pomyślnie zakończono giveaway **${updatedGiveaway.prize}** na ${channel}. `;
             replyText += `Wybrano ${winners.length} zwycięzcę(ów) z ${participantCount} uczestników.`;
             if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
-                replyText += `\n👑 Zwycięzcy byli ustawieni z góry.`;
+                replyText += `\n👑 Zwycięzcy byli ustawieni z góry (widoczne tylko dla Ciebie).`;
             }
             return InteractionHelper.safeReply(interaction, {
                 embeds: [successEmbed("🎉 Giveaway zakończony!", replyText)],
