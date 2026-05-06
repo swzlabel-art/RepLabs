@@ -100,12 +100,10 @@ export default {
             // Przetworzenie opcjonalnych zwycięzców z góry
             let presetWinners = [];
             if (presetWinnersRaw) {
-                // Wyciągnięcie ID użytkowników (wzmianki <@123>, <@!123> lub gołe ID)
                 const idRegex = /(\d{17,20})/g;
                 const matches = presetWinnersRaw.match(idRegex);
                 if (matches) {
-                    presetWinners = [...new Set(matches)]; // unikalne ID
-                    // Sprawdzenie, czy liczba podanych zwycięzców nie przekracza liczby winnerCount
+                    presetWinners = [...new Set(matches)];
                     if (presetWinners.length > winnerCount) {
                         throw new TitanBotError(
                             'Too many preset winners',
@@ -126,7 +124,7 @@ export default {
 
             const endTime = Date.now() + durationMs;
 
-            // Przygotowanie danych giveaway
+            // Przygotowanie danych giveaway (z zachowaniem presetWinners w bazie, ale bez publicznego pokazywania)
             const initialGiveawayData = {
                 messageId: "placeholder",
                 channelId: targetChannel.id,
@@ -140,37 +138,12 @@ export default {
                 isEnded: false,
                 ended: false,
                 createdAt: new Date().toISOString(),
-                presetWinners: presetWinners.length > 0 ? presetWinners : undefined, // zapisujemy w bazie
+                presetWinners: presetWinners.length > 0 ? presetWinners : undefined,
             };
 
-            // Tworzenie embeda (oryginalny z serwisu)
+            // Tworzenie embeda – BEZ żadnych dodatkowych pól o preset winners
             let embed = createGiveawayEmbed(initialGiveawayData, "active");
             
-            // Dodanie dodatkowych pól z emotkami i informacją o preset zwycięzcach
-            if (presetWinners.length > 0) {
-                const winnersMentions = presetWinners.map(id => `<@${id}>`).join(', ');
-                embed.addFields({
-                    name: '👑 **Z góry ustaleni zwycięzcy**',
-                    value: winnersMentions.length > 1000 ? 'Zbyt wielu, by wyświetlić.' : winnersMentions,
-                    inline: false
-                });
-            }
-            
-            // Dodanie pola z informacją o losowaniu (jeśli brak preset)
-            if (presetWinners.length === 0) {
-                embed.addFields({
-                    name: '🎲 **Losowanie**',
-                    value: 'Zwycięzcy zostaną wylosowani po zakończeniu.',
-                    inline: false
-                });
-            } else {
-                embed.addFields({
-                    name: '⚠️ **Uwaga**',
-                    value: 'Giveaway zakończy się bez losowania – zwycięzcy są już wybrani.',
-                    inline: false
-                });
-            }
-
             // Przyciski
             const row = createGiveawayButtons(false);
             
@@ -193,7 +166,7 @@ export default {
                 logger.warn(`Failed to save giveaway to database: ${giveawayMessage.id}`);
             }
 
-            // Logowanie zdarzenia (po polsku)
+            // Logowanie zdarzenia (logi wewnętrzne – nadal zawierają info o preset)
             try {
                 await logEvent({
                     client: interaction.client,
@@ -208,7 +181,7 @@ export default {
                             { name: '🏆 Liczba zwycięzców', value: winnerCount.toString(), inline: true },
                             { name: '⏰ Czas trwania', value: durationString, inline: true },
                             { name: '📍 Kanał', value: targetChannel.toString(), inline: true },
-                            ...(presetWinners.length > 0 ? [{ name: '👑 Z góry ustaleni', value: presetWinners.map(id => `<@${id}>`).join(', '), inline: false }] : [])
+                            ...(presetWinners.length > 0 ? [{ name: '👑 Z góry ustaleni (log)', value: presetWinners.map(id => `<@${id}>`).join(', '), inline: false }] : [])
                         ]
                     }
                 });
@@ -218,11 +191,9 @@ export default {
 
             logger.info(`Giveaway created successfully: ${giveawayMessage.id} in ${targetChannel.name}`);
 
-            // Odpowiedź dla użytkownika (ephemeral)
+            // Odpowiedź dla użytkownika (ephemeral) – BEZ wzmianki o preset winners
             let replyText = `🎉 Giveaway **${prizeName}** został uruchomiony na ${targetChannel} i zakończy się za **${durationString}**.`;
-            if (presetWinners.length > 0) {
-                replyText += `\n👑 **Uwaga:** Zwycięzcy są już ustawieni z góry: ${presetWinners.map(id => `<@${id}>`).join(', ')}.`;
-            }
+            // Usunięto informację o preset winners dla hosta – teraz widzi tylko standardowy komunikat
             await InteractionHelper.safeReply(interaction, {
                 embeds: [successEmbed("✅ Giveaway rozpoczęty!", replyText)],
                 flags: MessageFlags.Ephemeral,
