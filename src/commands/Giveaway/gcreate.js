@@ -54,7 +54,6 @@ export default {
 
     async execute(interaction) {
         try {
-            // Sprawdzenie czy na serwerze
             if (!interaction.inGuild()) {
                 throw new TitanBotError(
                     'Giveaway command used outside guild',
@@ -64,7 +63,6 @@ export default {
                 );
             }
 
-            // Sprawdzenie uprawnień
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
                 throw new TitanBotError(
                     'User lacks ManageGuild permission',
@@ -76,14 +74,12 @@ export default {
 
             logger.info(`Giveaway creation started by ${interaction.user.tag} in guild ${interaction.guildId}`);
 
-            // Pobranie opcji
             const durationString = interaction.options.getString("czas");
             const winnerCount = interaction.options.getInteger("wygrani");
             const prize = interaction.options.getString("nagroda");
             const targetChannel = interaction.options.getChannel("kanal") || interaction.channel;
             const presetWinnersRaw = interaction.options.getString("zwyciezcy");
 
-            // Walidacja podstawowych danych
             const durationMs = parseDuration(durationString);
             validateWinnerCount(winnerCount);
             const prizeName = validatePrize(prize);
@@ -97,7 +93,6 @@ export default {
                 );
             }
 
-            // Przetworzenie opcjonalnych zwycięzców z góry
             let presetWinners = [];
             if (presetWinnersRaw) {
                 const idRegex = /(\d{17,20})/g;
@@ -124,7 +119,6 @@ export default {
 
             const endTime = Date.now() + durationMs;
 
-            // Przygotowanie danych giveaway (z zachowaniem presetWinners w bazie, ale bez publicznego pokazywania)
             const initialGiveawayData = {
                 messageId: "placeholder",
                 channelId: targetChannel.id,
@@ -141,20 +135,15 @@ export default {
                 presetWinners: presetWinners.length > 0 ? presetWinners : undefined,
             };
 
-            // Tworzenie embeda – BEZ żadnych dodatkowych pól o preset winners
             let embed = createGiveawayEmbed(initialGiveawayData, "active");
-            
-            // Przyciski
             const row = createGiveawayButtons(false);
-            
-            // Wysłanie wiadomości na kanał
+
             const giveawayMessage = await targetChannel.send({
                 content: "🎉 **NOWY GIVEAWAY** 🎉",
                 embeds: [embed],
                 components: [row],
             });
 
-            // Zapisanie w bazie
             initialGiveawayData.messageId = giveawayMessage.id;
             const saved = await saveGiveaway(
                 interaction.client,
@@ -166,7 +155,6 @@ export default {
                 logger.warn(`Failed to save giveaway to database: ${giveawayMessage.id}`);
             }
 
-            // Logowanie zdarzenia (logi wewnętrzne – nadal zawierają info o preset)
             try {
                 await logEvent({
                     client: interaction.client,
@@ -191,9 +179,7 @@ export default {
 
             logger.info(`Giveaway created successfully: ${giveawayMessage.id} in ${targetChannel.name}`);
 
-            // Odpowiedź dla użytkownika (ephemeral) – BEZ wzmianki o preset winners
             let replyText = `🎉 Giveaway **${prizeName}** został uruchomiony na ${targetChannel} i zakończy się za **${durationString}**.`;
-            // Usunięto informację o preset winners dla hosta – teraz widzi tylko standardowy komunikat
             await InteractionHelper.safeReply(interaction, {
                 embeds: [successEmbed("✅ Giveaway rozpoczęty!", replyText)],
                 flags: MessageFlags.Ephemeral,
