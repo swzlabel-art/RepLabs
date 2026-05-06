@@ -14,53 +14,52 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 export default {
     data: new SlashCommandBuilder()
         .setName("gend")
-        .setDescription(
-            "Ends an active giveaway immediately and picks the winner(s).",
-        )
+        .setDescription("🎁 Zakańcza aktywny giveaway od razu i wybiera zwycięzcę(ów).")
         .addStringOption((option) =>
             option
-                .setName("messageid")
-                .setDescription("The message ID of the giveaway to end.")
+                .setName("id_wiadomosci")
+                .setDescription("ID wiadomości giveaway do zakończenia.")
                 .setRequired(true),
         )
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 
     async execute(interaction) {
         try {
-            
+            // Sprawdzenie czy na serwerze
             if (!interaction.inGuild()) {
                 throw new TitanBotError(
                     'Giveaway command used outside guild',
                     ErrorTypes.VALIDATION,
-                    'This command can only be used in a server.',
+                    'Ta komenda może być używana tylko na serwerze.',
                     { userId: interaction.user.id }
                 );
             }
 
-            
+            // Sprawdzenie uprawnień
             if (!interaction.member.permissions.has(PermissionFlagsBits.ManageGuild)) {
                 throw new TitanBotError(
                     'User lacks ManageGuild permission',
                     ErrorTypes.PERMISSION,
-                    "You need the 'Manage Server' permission to end a giveaway.",
+                    "❌ Potrzebujesz uprawnienia **Zarządzanie serwerem**, aby zakończyć giveaway.",
                     { userId: interaction.user.id, guildId: interaction.guildId }
                 );
             }
 
             logger.info(`Giveaway end initiated by ${interaction.user.tag} in guild ${interaction.guildId}`);
 
-            const messageId = interaction.options.getString("messageid");
+            const messageId = interaction.options.getString("id_wiadomosci");
 
-            
+            // Walidacja ID
             if (!messageId || !/^\d+$/.test(messageId)) {
                 throw new TitanBotError(
                     'Invalid message ID format',
                     ErrorTypes.VALIDATION,
-                    'Please provide a valid message ID.',
+                    'Podaj prawidłowe ID wiadomości.',
                     { providedId: messageId }
                 );
             }
 
+            // Pobranie giveaway z bazy
             const giveaways = await getGuildGiveaways(interaction.client, interaction.guildId);
             const giveaway = giveaways.find(g => g.messageId === messageId);
 
@@ -68,111 +67,129 @@ export default {
                 throw new TitanBotError(
                     `Giveaway not found: ${messageId}`,
                     ErrorTypes.VALIDATION,
-                    "No giveaway was found with that message ID in the database.",
+                    "Nie znaleziono giveaway o podanym ID w bazie danych.",
                     { messageId, guildId: interaction.guildId }
                 );
             }
 
-            
-            const endResult = await endGiveawayService(
-                interaction.client,
-                giveaway,
-                interaction.guildId,
-                interaction.user.id
-            );
-
-            const updatedGiveaway = endResult.giveaway;
-            const winners = endResult.winners;
-
-            
-            const channel = await interaction.client.channels.fetch(
-                updatedGiveaway.channelId,
-            ).catch(err => {
-                logger.warn(`Could not fetch channel ${updatedGiveaway.channelId}:`, err.message);
+            // Pobranie kanału i wiadomości
+            const channel = await interaction.client.channels.fetch(giveaway.channelId).catch(err => {
+                logger.warn(`Could not fetch channel ${giveaway.channelId}:`, err.message);
                 return null;
             });
 
             if (!channel || !channel.isTextBased()) {
                 throw new TitanBotError(
-                    `Channel not found: ${updatedGiveaway.channelId}`,
+                    `Channel not found: ${giveaway.channelId}`,
                     ErrorTypes.VALIDATION,
-                    "Could not find the channel where the giveaway was hosted. The giveaway state has been updated.",
-                    { channelId: updatedGiveaway.channelId, messageId }
+                    "Nie można znaleźć kanału, na którym był giveaway. Stan giveaway został zaktualizowany.",
+                    { channelId: giveaway.channelId, messageId }
                 );
             }
 
-            const message = await channel.messages
-                .fetch(messageId)
-                .catch(err => {
-                    logger.warn(`Could not fetch message ${messageId}:`, err.message);
-                    return null;
-                });
+            const message = await channel.messages.fetch(messageId).catch(err => {
+                logger.warn(`Could not fetch message ${messageId}:`, err.message);
+                return null;
+            });
 
             if (!message) {
                 throw new TitanBotError(
                     `Message not found: ${messageId}`,
                     ErrorTypes.VALIDATION,
-                    "Could not find the giveaway message. The giveaway state has been updated.",
-                    { messageId, channelId: updatedGiveaway.channelId }
+                    "Nie można znaleźć wiadomości giveaway. Stan giveaway został zaktualizowany.",
+                    { messageId, channelId: giveaway.channelId }
                 );
             }
 
-            
-            await saveGiveaway(
-                interaction.client,
-                interaction.guildId,
-                updatedGiveaway,
-            );
+            let endResult;
+            let winners = [];
+            let participantCount = 0;
 
-            
+            // Sprawdzenie, czy giveaway ma z góry ustalonych zwycięzców
+            if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
+                // 🔹 Użyj preset zwycięzców (bez losowania)
+                winners = giveaway.presetWinners.slice(0, giveaway.winnerCount);
+                participantCount = giveaway.participants?.length || 0;
+
+                // Aktualizacja giveaway jako zakończony
+                giveaway.isEnded = true;
+                giveaway.ended = true;
+                giveaway.endTime = Date.now();
+                // Zapisanie w bazie
+                await saveGiveaway(interaction.client, interaction.guildId, giveaway);
+
+                logger.info(`Giveaway ended with preset winners (${winners.length}) for message ${messageId}`);
+
+                // Symulacja obiektu wynikowego (dla zgodności z dalszym kodem)
+                endResult = {
+                    giveaway: giveaway,
+                    winners: winners,
+                    participantCount: participantCount
+                };
+            } else {
+                // 🔹 Normalne zakończenie przez serwis (losowanie)
+                endResult = await endGiveawayService(
+                    interaction.client,
+                    giveaway,
+                    interaction.guildId,
+                    interaction.user.id
+                );
+                winners = endResult.winners;
+                participantCount = endResult.participantCount;
+            }
+
+            const updatedGiveaway = endResult.giveaway;
+
+            // Aktualizacja wiadomości giveaway (embed i przyciski)
             const newEmbed = createGiveawayEmbed(updatedGiveaway, "ended", winners);
             const newRow = createGiveawayButtons(true);
 
+            // Dodanie informacji o preset zwycięzcach (jeśli byli)
+            if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
+                newEmbed.addFields({
+                    name: '👑 **Z góry ustaleni zwycięzcy**',
+                    value: winners.map(id => `<@${id}>`).join(', '),
+                    inline: false
+                });
+            }
+
             await message.edit({
-                content: "🎉 **GIVEAWAY ENDED** 🎉",
+                content: "🎉 **GIVEAWAY ZAKOŃCZONY** 🎉",
                 embeds: [newEmbed],
                 components: [newRow],
             });
 
-            
+            // Ogłoszenie zwycięzców
             if (winners.length > 0) {
-                const winnerMentions = winners
-                    .map((id) => `<@${id}>`)
-                    .join(", ");
-                const winnerPingMsg = await channel.send({
-                    content: `🎉 CONGRATULATIONS ${winnerMentions}! You won the **${updatedGiveaway.prize}** giveaway! Please contact the host <@${updatedGiveaway.hostId}> to claim your prize.`,
-                });
+                const winnerMentions = winners.map(id => `<@${id}>`).join(", ");
+                let winnerMessage = `🎉 **GRATULACJE** ${winnerMentions}! Wygrałeś/aś giveaway **${updatedGiveaway.prize}**! 🎉\n`;
+                winnerMessage += `Skontaktuj się z organizatorem <@${updatedGiveaway.hostId}>, aby odebrać nagrodę.`;
+
+                if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
+                    winnerMessage += `\n\n👑 *Zwycięzcy zostali ustaleni z góry przez organizatora.*`;
+                }
+
+                const winnerPingMsg = await channel.send({ content: winnerMessage });
                 updatedGiveaway.winnerPingMessageId = winnerPingMsg.id;
                 await saveGiveaway(interaction.client, interaction.guildId, updatedGiveaway);
 
                 logger.info(`Giveaway ended with ${winners.length} winner(s): ${messageId}`);
 
-                
+                // Logowanie zdarzenia (po polsku)
                 try {
                     await logEvent({
                         client: interaction.client,
                         guildId: interaction.guildId,
                         eventType: EVENT_TYPES.GIVEAWAY_WINNER,
                         data: {
-                            description: `Giveaway ended with ${winners.length} winner(s)`,
+                            description: `Giveaway zakończony z ${winners.length} zwycięzcą(ami)`,
                             channelId: channel.id,
                             userId: interaction.user.id,
                             fields: [
-                                {
-                                    name: '🎁 Prize',
-                                    value: updatedGiveaway.prize || 'Mystery Prize!',
-                                    inline: true
-                                },
-                                {
-                                    name: '🏆 Winners',
-                                    value: winnerMentions,
-                                    inline: false
-                                },
-                                {
-                                    name: '👥 Entries',
-                                    value: endResult.participantCount.toString(),
-                                    inline: true
-                                }
+                                { name: '🎁 Nagroda', value: updatedGiveaway.prize || 'Tajemnicza nagroda!', inline: true },
+                                { name: '🏆 Zwycięzcy', value: winnerMentions, inline: false },
+                                { name: '👥 Liczba uczestników', value: participantCount.toString(), inline: true },
+                                ...(giveaway.presetWinners ? [{ name: '👑 Typ', value: 'Z góry ustaleni', inline: true }] : [])
                             ]
                         }
                     });
@@ -181,20 +198,21 @@ export default {
                 }
             } else {
                 await channel.send({
-                    content: `The giveaway for **${updatedGiveaway.prize}** has ended with no valid entries.`,
+                    content: `Giveaway dla nagrody **${updatedGiveaway.prize}** zakończył się bez ważnych uczestników. 😢`,
                 });
                 logger.info(`Giveaway ended with no winners: ${messageId}`);
             }
 
             logger.info(`Giveaway successfully ended by ${interaction.user.tag}: ${messageId}`);
 
+            // Odpowiedź dla osoby kończącej (ephemeral)
+            let replyText = `✅ Pomyślnie zakończono giveaway **${updatedGiveaway.prize}** na ${channel}. `;
+            replyText += `Wybrano ${winners.length} zwycięzcę(ów) z ${participantCount} uczestników.`;
+            if (giveaway.presetWinners && giveaway.presetWinners.length > 0) {
+                replyText += `\n👑 Zwycięzcy byli ustawieni z góry.`;
+            }
             return InteractionHelper.safeReply(interaction, {
-                embeds: [
-                    successEmbed(
-                        "Giveaway Ended ✅",
-                        `Successfully ended the giveaway for **${updatedGiveaway.prize}** in ${channel}. Selected ${winners.length} winner(s) from ${endResult.participantCount} entries.`,
-                    ),
-                ],
+                embeds: [successEmbed("🎉 Giveaway zakończony!", replyText)],
                 flags: MessageFlags.Ephemeral,
             });
 
@@ -207,6 +225,3 @@ export default {
         }
     },
 };
-
-
-
