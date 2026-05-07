@@ -1,7 +1,8 @@
 {
-  "name": "titanbot-custom",
+  "name": "replabs",
+  "deploy": "node deploy-commands.js"
   "version": "2.0.0",
-  "description": "Modular Ultimate Community Bot by Touchpoint Support",
+  "description": "bot replabs",
   "main": "src/app.js",
   "type": "module",
   "scripts": {
