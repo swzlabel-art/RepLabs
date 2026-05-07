@@ -1,4 +1,4 @@
-import { Events, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
+import { Events, EmbedBuilder, PermissionFlagsBits, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
 import { getColor } from '../config/bot.js';
 import { getGuildConfig } from '../services/guildConfig.js';
 import { getWelcomeConfig } from '../utils/database.js';
@@ -16,6 +16,14 @@ export default {
     try {
         const { guild, user } = member;
         
+        // =====================================================
+        // NOWOŚĆ: Wysyłanie prywatnej wiadomości powitalnej (DM)
+        // =====================================================
+        await sendWelcomeDM(member);
+        
+        // =====================================================
+        // RESZTA ISTNIEJĄCEJ LOGIKI (bez zmian)
+        // =====================================================
         const config = await getGuildConfig(member.client, guild.id);
         
         const welcomeConfig = await getWelcomeConfig(member.client, guild.id);
@@ -106,7 +114,6 @@ export default {
             await handleVerification(member, guild, config.verification, member.client);
         }
 
-        
         try {
             await logEvent({
                 client: member.client,
@@ -138,7 +145,6 @@ export default {
             logger.debug('Error logging member join:', error);
         }
         
-        
         try {
             const counters = await getServerCounters(member.client, guild.id);
             for (const counter of counters) {
@@ -150,7 +156,6 @@ export default {
             logger.debug('Error updating counters on member join:', error);
         }
         
-        // Restore birthday data if the member previously left
         try {
             const backupKey = `guild:${guild.id}:birthdays:left`;
             const backup = (await member.client.db.get(backupKey)) || {};
@@ -171,6 +176,56 @@ export default {
   }
 };
 
+// =====================================================
+// NOWA FUNKCJA: WYSYŁANIE DM POWITALNEGO
+// =====================================================
+async function sendWelcomeDM(member) {
+    try {
+        const description = `
+**Siemano** 👋 ${member.user.toString()}!
+
+**📦 Rejestrując się z tego linku:**  
+https://ikako.vip/r/replabs  
+
+🔹 dostajesz **20% zniżki na wysyłkę** (⚠️ **po każdej paczce załóż nowe konto**, bo się zużywa)  
+🔹 oraz **1500 zł w kuponach** na wysyłkę!
+
+**🎁 Wszystkie promki znajdziesz na kanale:**  
+https://discord.com/channels/1464968036791357648/1464980867771269271
+
+**📱 Linki z TikTok znajdziesz tutaj:**  
+https://discord.com/channels/1464968036791357648/1465728344019439628
+
+**💡 Nie przegap okazji – zarejestruj się już teraz!**
+        `;
+
+        const embed = new EmbedBuilder()
+            .setDescription(description)
+            .setColor('#FFCC00')  // żółty pasek
+            .setTimestamp()
+            .setFooter({ text: 'Witamy na serwerze!', iconURL: member.guild.iconURL() });
+
+        const button = new ButtonBuilder()
+            .setLabel('PRZEJDŹ NA SERWER 🚀')
+            .setStyle(ButtonStyle.Link)
+            .setURL('https://discord.com/channels/1464968036791357648/1464980867771269271');
+
+        const row = new ActionRowBuilder().addComponents(button);
+
+        await member.send({ embeds: [embed], components: [row] });
+        logger.info(`✅ Welcome DM sent to ${member.user.tag}`);
+    } catch (error) {
+        if (error.code === 50007) {
+            logger.warn(`❌ Cannot send DM to ${member.user.tag} – user has DMs disabled.`);
+        } else {
+            logger.error(`❌ Error sending welcome DM to ${member.user.tag}:`, error);
+        }
+    }
+}
+
+// =====================================================
+// POZOSTAŁE FUNKCJE POMOCNICZE (bez zmian)
+// =====================================================
 async function handleVerification(member, guild, verificationConfig, client) {
     const { autoVerifyOnJoin } = await import('../services/verificationService.js');
     
@@ -210,6 +265,3 @@ async function assignRoleSafely(member, role) {
         logger.warn(`Failed to assign role ${role.id} to member ${member.id}:`, error);
     }
 }
-
-
-
