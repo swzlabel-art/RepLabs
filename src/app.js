@@ -13,7 +13,7 @@ import { checkBirthdays } from './services/birthdayService.js';
 import { checkGiveaways } from './services/giveawayService.js';
 import { loadCommands, registerCommands as registerSlashCommands } from './handlers/commandLoader.js';
 
-
+console.log(`Próba załadowania: ${file}`);
 console.log('Token pobrany z env:', process.env.DISCORD_TOKEN ? '✅ Jest' : '❌ BRAK');
 
 class TitanBot extends Client {
