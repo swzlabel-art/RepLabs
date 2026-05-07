@@ -1,137 +1,107 @@
-import { SlashCommandBuilder, PermissionFlagsBits, PermissionsBitField, ChannelType, MessageFlags } from 'discord.js';
-import { createEmbed, errorEmbed, successEmbed, infoEmbed, warningEmbed } from '../../utils/embeds.js';
-import { logEvent } from '../../utils/moderation.js';
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder } from 'discord.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
+import { logEvent } from '../../utils/moderation.js';
 import { sanitizeMarkdown } from '../../utils/sanitization.js';
 
-import { InteractionHelper } from '../../utils/interactionHelper.js';
+// 👇 WPISZ TUTAJ SWÓJ NUMER ID (prawy klik na siebie na Discordzie -> Kopiuj ID)
+const OWNER_ID = "1110216754812178524";   // np. "123456789012345678"
+
 export default {
     data: new SlashCommandBuilder()
         .setName("dm")
-        .setDescription("Send a direct message to a user (Staff only)")
+        .setDescription("Wysyła embed z żółtym paskiem i przyciskiem do użytkownika (tylko właściciel)")
         .addUserOption(option =>
-            option
-                .setName("user")
-                .setDescription("The user to send a DM to")
+            option.setName("user")
+                .setDescription("Użytkownik, który otrzyma wiadomość")
                 .setRequired(true)
         )
         .addStringOption(option =>
-            option
-                .setName("message")
-                .setDescription("The message to send")
+            option.setName("tresc")
+                .setDescription("Treść wiadomości (embed)")
                 .setRequired(true)
         )
-        .addBooleanOption(option =>
-            option
-                .setName("anonymous")
-                .setDescription("Send the message anonymously (default: false)")
-                .setRequired(false)
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
         .setDMPermission(false),
     category: "Moderation",
 
     async execute(interaction, config, client) {
-        const deferSuccess = await InteractionHelper.safeDefer(interaction);
-        if (!deferSuccess) {
-            logger.warn(`DM interaction defer failed`, {
-                userId: interaction.user.id,
-                guildId: interaction.guildId,
-                commandName: 'dm'
+        // 1️⃣ Sprawdzenie, czy wykonawca to właściciel (TY)
+        if (interaction.user.id !== OWNER_ID) {
+            return interaction.reply({
+                content: "❌ Tylko właściciel bota może używać tej komendy.",
+                flags: MessageFlags.Ephemeral
             });
-            return;
         }
 
-    const targetUser = interaction.options.getUser("user");
-        const message = interaction.options.getString("message");
-        const anonymous = interaction.options.getBoolean("anonymous") || false;
+        // 2️⃣ Defer (zabezpieczenie przed timeout)
+        const deferSuccess = await InteractionHelper.safeDefer(interaction, { ephemeral: true });
+        if (!deferSuccess) return;
 
-        try {
-            
-            if (message.length > 2000) {
-                return await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [
-                        errorEmbed(
-                            "Message Too Long",
-                            "Messages must be under 2000 characters."
-                        ),
-                    ],
-                    flags: MessageFlags.Ephemeral,
-                });
-            }
+        const targetUser = interaction.options.getUser("user");
+        let tresc = interaction.options.getString("tresc");
 
-            
-            if (targetUser.bot) {
-                return await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [
-                        errorEmbed(
-                            "Cannot DM Bot",
-                            "You cannot send DMs to bot accounts."
-                        ),
-                    ],
-                    flags: MessageFlags.Ephemeral,
-                });
-            }
-
-            
-            const sanitized = sanitizeMarkdown(message);
-
-            const dmChannel = await targetUser.createDM();
-            
-            await dmChannel.send({
-                embeds: [
-                    successEmbed(
-                        anonymous ? "Message from the Staff Team" : `Message from ${interaction.user.tag}`,
-                        sanitized
-                    ).setFooter({
-                        text: `You cannot reply to this message. | Logger ID: ${interaction.id}`
-                    })
-                ]
+        // Walidacje
+        if (targetUser.bot) {
+            return InteractionHelper.safeEditReply(interaction, {
+                content: "❌ Nie można wysłać wiadomości do bota.",
+                flags: MessageFlags.Ephemeral
             });
+        }
+        if (tresc.length > 2000) {
+            return InteractionHelper.safeEditReply(interaction, {
+                content: "❌ Treść wiadomości nie może przekraczać 2000 znaków.",
+                flags: MessageFlags.Ephemeral
+            });
+        }
 
+        const cleanedText = sanitizeMarkdown(tresc);
+
+        // 3️⃣ Embed z żółtym paskiem
+        const embed = new EmbedBuilder()
+            .setDescription(cleanedText)
+            .setColor('#FFCC00');
+
+        // 4️⃣ Przycisk z linkiem (stały)
+        const button = new ButtonBuilder()
+            .setLabel('PRZEJDŹ NA SERWER 🚀')
+            .setStyle(ButtonStyle.Link)
+            .setURL('https://discord.com/channels/1464968036791357648/1464980867771269271');
+
+        const row = new ActionRowBuilder().addComponents(button);
+
+        // 5️⃣ Wysłanie DM
+        try {
+            await targetUser.send({ embeds: [embed], components: [row] });
+
+            // Logowanie (opcjonalne)
             await logEvent({
-                client: interaction.client,
+                client,
                 guild: interaction.guild,
                 event: {
-                    action: "DM Sent",
+                    action: "Wiadomość prywatna (embed+przycisk)",
                     target: `${targetUser.tag} (${targetUser.id})`,
                     executor: `${interaction.user.tag} (${interaction.user.id})`,
-                    reason: `Anonymous: ${anonymous ? 'Yes' : 'No'}`,
-                    metadata: {
-                        userId: targetUser.id,
-                        moderatorId: interaction.user.id,
-                        anonymous,
-                        messageLength: sanitized.length
-                    }
+                    reason: `Treść: ${cleanedText.substring(0, 100)}...`
                 }
             });
 
-            return await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    successEmbed(
-                        "DM Sent",
-                        `Successfully sent a message to ${targetUser.tag}`
-                    ),
-                ],
+            await InteractionHelper.safeEditReply(interaction, {
+                content: `✅ Wiadomość została wysłana do **${targetUser.tag}**.`,
+                flags: MessageFlags.Ephemeral
             });
         } catch (error) {
-            logger.error('DM command error:', error);
-            
-if (error.code === 50007) {
-                return await InteractionHelper.safeEditReply(interaction, {
-                    embeds: [
-                        errorEmbed("Error", `Could not send a DM to ${targetUser.tag}. They may have DMs disabled.`),
-                    ],
+            logger.error('Błąd podczas wysyłania DM:', error);
+            if (error.code === 50007) {
+                return InteractionHelper.safeEditReply(interaction, {
+                    content: `❌ Nie udało się wysłać wiadomości do **${targetUser.tag}** – użytkownik ma wyłączone prywatne wiadomości.`,
+                    flags: MessageFlags.Ephemeral
                 });
             }
-            
-            return await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    errorEmbed("Error", `Failed to send DM: ${error.message}`),
-                ],
+            return InteractionHelper.safeEditReply(interaction, {
+                content: `❌ Wystąpił błąd: ${error.message}`,
+                flags: MessageFlags.Ephemeral
             });
         }
     }
 };
-
-
