@@ -1,5 +1,6 @@
 {
   "name": "replabs",
+  "deploy": "node deploy-commands.js",
   "version": "2.0.0",
   "description": "bot replabs",
   "main": "src/app.js",
