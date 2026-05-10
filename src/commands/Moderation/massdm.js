@@ -64,10 +64,24 @@ export default {
         }
 
         if (confirmation.customId === 'cancel') {
-            return confirmation.update({ content: "❌ Anulowano.", components: [], embeds: [] });
+            await confirmation.update({ content: "❌ Anulowano.", components: [], embeds: [] }).catch(err => {
+                logger.error(`Błąd przy aktualizacji anulowania: ${err}`);
+            });
+            return;
         }
 
-        await confirmation.update({ content: "⏳ Rozpoczynam wysyłkę...", components: [], embeds: [] });
+        // --- KLUCZOWA POPRAWKA: bezpieczna aktualizacja na "Rozpoczynam..." ---
+        try {
+            await confirmation.update({ content: "⏳ Rozpoczynam wysyłkę...", components: [], embeds: [] });
+        } catch (updateError) {
+            logger.error(`Błąd przy update confirmation: ${updateError}`);
+            // Nie ma już jak odpowiedzieć przez confirmation, wysyłamy nową wiadomość w kanale (ephemeral)
+            return InteractionHelper.safeEditReply(interaction, { 
+                content: "❌ Nie udało się potwierdzić (interakcja wygasła lub wiadomość usunięta). Spróbuj ponownie.", 
+                components: [], 
+                embeds: [] 
+            });
+        }
 
         const embed = new EmbedBuilder().setDescription(cleanedText).setColor('#FFCC00');
         const button = new ButtonBuilder()
@@ -77,7 +91,10 @@ export default {
         const actionRow = new ActionRowBuilder().addComponents(button);
 
         let success = 0, fail = 0;
+        let stopped = false;
+
         for (const [, member] of members) {
+            if (stopped) break;
             try {
                 await member.send({ embeds: [embed], components: [actionRow] });
                 success++;
@@ -85,6 +102,7 @@ export default {
             } catch (error) {
                 fail++;
                 logger.warn(`MassDM fail: ${member.user.tag} - ${error.code}`);
+                // Jeśli błąd to "Cannot send messages to this user" (50007) – pomijamy
             }
         }
 
@@ -92,6 +110,15 @@ export default {
             .setColor(success ? '#57F287' : '#ED4245')
             .setTitle("📬 Zakończono")
             .setDescription(`✅ Wysłano: ${success}\n❌ Błędy: ${fail}`);
-        await InteractionHelper.safeEditReply(interaction, { embeds: [summary], components: [] });
+        
+        // Ponowne użycie safeEditReply – w tym momencie interakcja może być już wykorzystana,
+        // ale safeEditReply powinien obsłużyć followUp jeśli trzeba. Dla bezpieczeństwa:
+        try {
+            await InteractionHelper.safeEditReply(interaction, { embeds: [summary], components: [] });
+        } catch (finalError) {
+            logger.error(`MassDM końcowy błąd: ${finalError}`);
+            // Jeśli nie można edytować (np. interakcja wygasła), wysyłamy followUp
+            await interaction.followUp({ embeds: [summary], flags: MessageFlags.Ephemeral });
+        }
     }
 };
