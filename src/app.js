@@ -1,4 +1,4 @@
-﻿import 'dotenv/config';
+import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import { REST } from '@discordjs/rest';
 import express from 'express';
@@ -13,7 +13,7 @@ import { checkBirthdays } from './services/birthdayService.js';
 import { checkGiveaways } from './services/giveawayService.js';
 import { loadCommands, registerCommands as registerSlashCommands } from './handlers/commandLoader.js';
 
-console.log(`Próba załadowania: ${file}`);
+// Usunięto linię z niezdefiniowaną zmienną 'file'
 console.log('Token pobrany z env:', process.env.DISCORD_TOKEN ? '✅ Jest' : '❌ BRAK');
 
 class TitanBot extends Client {
@@ -349,7 +349,7 @@ class TitanBot extends Client {
       }
 
       logger.info('✅ Graceful shutdown complete');
-  shutdownLog('Bot stopped successfully.');
+      shutdownLog('Bot stopped successfully.');
       process.exit(0);
     } catch (error) {
       logger.error('Error during graceful shutdown:', error);
@@ -384,6 +384,3 @@ try {
 }
 
 export default TitanBot;
-
-
-
