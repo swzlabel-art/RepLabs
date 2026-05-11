@@ -1,12 +1,14 @@
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } from 'discord.js';
 import { successEmbed, errorEmbed } from '../../utils/embeds.js';
 import { logger } from '../../utils/logger.js';
 import { TitanBotError, ErrorTypes, handleInteractionError } from '../../utils/errorHandler.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-// ID roli dającej 2x szansę
 const PREMIUM_ROLE_ID = '1465729118732554292';
-const ALLOWED_CHANNEL_ID = '1503389299008082010'; // Tylko ten kanał
+const ALLOWED_CHANNEL_ID = '1503389299008082010';
+
+// Cooldown w pamięci (Map: userId -> timestamp)
+const cooldowns = new Map();
 
 export default {
     data: new SlashCommandBuilder()
@@ -16,7 +18,6 @@ export default {
 
     async execute(interaction) {
         try {
-            // 1. Sprawdzenie, czy komenda jest używana na serwerze
             if (!interaction.inGuild()) {
                 throw new TitanBotError(
                     'Command used outside guild',
@@ -26,7 +27,6 @@ export default {
                 );
             }
 
-            // 2. Sprawdzenie, czy kanał jest dozwolony
             if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
                 return InteractionHelper.safeReply(interaction, {
                     embeds: [errorEmbed('❌ Zły kanał', `Komenda /drop działa tylko na kanale <#${ALLOWED_CHANNEL_ID}>.`)],
@@ -35,57 +35,24 @@ export default {
             }
 
             const userId = interaction.user.id;
-            const guild = interaction.guild;
-            const member = interaction.member;
-
-            // 3. Sprawdzenie, czy użytkownik ma rolę premium (po ID)
-            const hasPremiumRole = member.roles.cache.has(PREMIUM_ROLE_ID);
+            const hasPremiumRole = interaction.member.roles.cache.has(PREMIUM_ROLE_ID);
             
-            // 4. Sprawdzenie limitu czasowego (indywidualny co godzinę)
+            // Cooldown 1 godzina (3600000 ms)
             const now = Date.now();
-            const oneHour = 3600 * 1000;
-            
-            let lastUsed = null;
-            try {
-                const result = await interaction.client.db.query(
-                    `SELECT last_drop_time FROM user_drops WHERE user_id = $1 AND guild_id = $2`,
-                    [userId, interaction.guildId]
-                );
-                if (result.rows.length > 0) {
-                    lastUsed = new Date(result.rows[0].last_drop_time).getTime();
-                }
-            } catch (dbError) {
-                logger.error('Błąd odczytu limitu dropu:', dbError);
-                // Jeśli tabela nie istnieje, utwórz ją
-                await interaction.client.db.query(`
-                    CREATE TABLE IF NOT EXISTS user_drops (
-                        user_id TEXT,
-                        guild_id TEXT,
-                        last_drop_time TIMESTAMP,
-                        PRIMARY KEY (user_id, guild_id)
-                    )
-                `);
-                lastUsed = null;
-            }
-
-            if (lastUsed && (now - lastUsed) < oneHour) {
-                const remaining = Math.ceil((oneHour - (now - lastUsed)) / 60000);
-                const cooldownEmbed = errorEmbed('⏳ Za wcześnie!', 
+            const lastUsed = cooldowns.get(userId);
+            if (lastUsed && (now - lastUsed) < 3600000) {
+                const remaining = Math.ceil((3600000 - (now - lastUsed)) / 60000);
+                const cdEmbed = errorEmbed('⏳ Za wcześnie!', 
                     `${interaction.user}, możesz użyć /drop ponownie za **${remaining} minut**.`
                 );
-                if (hasPremiumRole) {
-                    cooldownEmbed.setColor(0xFFD700).setTitle('✨ Losowanie premium ✨').setDescription(cooldownEmbed.data.description);
-                }
+                if (hasPremiumRole) cdEmbed.setColor(0xFFD700).setTitle('✨ Losowanie premium ✨');
                 return InteractionHelper.safeReply(interaction, {
-                    embeds: [cooldownEmbed],
+                    embeds: [cdEmbed],
                     flags: MessageFlags.Ephemeral,
                 });
             }
 
-            // 5. Logika losowania (na razie zawsze przegrana)
-            const isWin = false;
-            
-            // 6. Przygotowanie embeda (wyróżniający się)
+            // Losowanie – na razie zawsze przegrana
             let embed;
             if (hasPremiumRole) {
                 embed = successEmbed('✨⭐ DROP PREMIUM ⭐✨', '')
@@ -103,23 +70,12 @@ export default {
                     .setTimestamp();
             }
 
-            // 7. Aktualizacja czasu ostatniego użycia w bazie
-            try {
-                await interaction.client.db.query(
-                    `INSERT INTO user_drops (user_id, guild_id, last_drop_time)
-                     VALUES ($1, $2, $3)
-                     ON CONFLICT (user_id, guild_id) DO UPDATE SET last_drop_time = EXCLUDED.last_drop_time`,
-                    [userId, interaction.guildId, new Date()]
-                );
-            } catch (dbError) {
-                logger.error('Błąd zapisu limitu dropu:', dbError);
-            }
-
-            // 8. Wysłanie odpowiedzi (publiczna)
-            await interaction.reply({ embeds: [embed] });
+            // Aktualizacja cooldownu
+            cooldowns.set(userId, now);
             
-            logger.info(`/drop użyte przez ${interaction.user.tag} (${userId}) | Premium: ${hasPremiumRole} | guild: ${interaction.guildId}`);
-
+            await interaction.reply({ embeds: [embed] });
+            logger.info(`/drop użyte przez ${interaction.user.tag} | Premium: ${hasPremiumRole}`);
+            
         } catch (error) {
             await handleInteractionError(interaction, error, {
                 type: 'command',
