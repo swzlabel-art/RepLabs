@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder, ButtonBuilder, ButtonStyle, ActionRowBuilder, ChannelType } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, MessageFlags, EmbedBuilder, ChannelType } from 'discord.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
 import { logEvent } from '../../utils/moderation.js';
@@ -10,7 +10,7 @@ const OWNER_ID = "1110216754812178524";   // ZMIEŃ NA SWÓJ NUMER ID
 export default {
     data: new SlashCommandBuilder()
         .setName("wiad")
-        .setDescription("Wysyła embed z żółtym paskiem i przyciskiem na wskazany kanał (tylko właściciel)")
+        .setDescription("Wysyła embed z żółtym paskiem na wskazany kanał (tylko właściciel)")
         .addChannelOption(option =>
             option.setName("kanal")
                 .setDescription("Kanał, na którym ma pojawić się wiadomość")
@@ -58,22 +58,14 @@ export default {
 
         const cleanedText = sanitizeMarkdown(tresc);
 
-        // 3. Embed – żółty pasek
+        // 3. Embed – żółty pasek (BEZ PRZYCISKU)
         const embed = new EmbedBuilder()
             .setDescription(cleanedText)
             .setColor('#FFCC00');
 
-        // 4. Przycisk z linkiem (stały)
-        const button = new ButtonBuilder()
-            .setLabel('PRZEJDŹ NA SERWER 🚀')
-            .setStyle(ButtonStyle.Link)
-            .setURL('https://discord.com/channels/1464968036791357648/1464980867771269271');
-
-        const row = new ActionRowBuilder().addComponents(button);
-
-        // 5. Wysłanie na kanał
+        // 4. Wysłanie na kanał (bez komponentów)
         try {
-            await targetChannel.send({ embeds: [embed], components: [row] });
+            await targetChannel.send({ embeds: [embed] });
 
             // Opcjonalne logowanie (jeśli masz funkcję logEvent)
             if (typeof logEvent === 'function') {
@@ -81,7 +73,7 @@ export default {
                     client,
                     guild: interaction.guild,
                     event: {
-                        action: "Wiadomość na kanał (embed+przycisk)",
+                        action: "Wiadomość na kanał (embed bez przycisku)",
                         target: `${targetChannel.name} (${targetChannel.id})`,
                         executor: `${interaction.user.tag} (${interaction.user.id})`,
                         reason: `Treść: ${cleanedText.substring(0, 100)}...`
