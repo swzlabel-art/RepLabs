@@ -6,9 +6,27 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 const PREMIUM_ROLE_ID = '1465729118732554292';
 const ALLOWED_CHANNEL_ID = '1503389299008082010';
+const COOLDOWN_MS = 3600000; // 1 godzina
 
 // Cooldown w pamięci (Map: userId -> timestamp)
 const cooldowns = new Map();
+
+/**
+ * Formatuje pozostały czas w milisekundach na czytelny string.
+ * @param {number} msLeft - pozostały czas w ms
+ * @returns {string} sformatowany czas (np. "2 godz. 15 min", "45 min", "30 sek.")
+ */
+function formatCooldown(msLeft) {
+    const seconds = Math.floor(msLeft / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) return `${days} d ${hours % 24} h`;
+    if (hours > 0) return `${hours} godz. ${minutes % 60} min`;
+    if (minutes > 0) return `${minutes} min`;
+    return `${seconds} sek.`;
+}
 
 export default {
     data: new SlashCommandBuilder()
@@ -37,13 +55,13 @@ export default {
             const userId = interaction.user.id;
             const hasPremiumRole = interaction.member.roles.cache.has(PREMIUM_ROLE_ID);
             
-            // Cooldown 1 godzina (3600000 ms)
             const now = Date.now();
             const lastUsed = cooldowns.get(userId);
-            if (lastUsed && (now - lastUsed) < 3600000) {
-                const remaining = Math.ceil((3600000 - (now - lastUsed)) / 60000);
+            if (lastUsed && (now - lastUsed) < COOLDOWN_MS) {
+                const timeLeft = COOLDOWN_MS - (now - lastUsed);
+                const formattedTime = formatCooldown(timeLeft);
                 const cdEmbed = errorEmbed('⏳ Za wcześnie!', 
-                    `${interaction.user}, możesz użyć /drop ponownie za **${remaining} minut**.`
+                    `${interaction.user}, możesz użyć /drop ponownie za **${formattedTime}**.`
                 );
                 if (hasPremiumRole) cdEmbed.setColor(0xFFD700).setTitle('✨ Losowanie premium ✨');
                 return InteractionHelper.safeReply(interaction, {
