@@ -76,14 +76,14 @@ export default {
                 embed = successEmbed('✨⭐ DROP PREMIUM ⭐✨', '')
                     .setColor(0xFFD700)
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n🌟 *Dzięki specjalnej randze Twoje szanse są 2x większe!* 🌟`)
+                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n🌟 *Dzięki <@&${PREMIUM_ROLE_ID}> Twoje szanse są 2x większe!* 🌟`)
                     .setFooter({ text: 'Losowanie premium • wracaj za godzinę', iconURL: interaction.client.user.displayAvatarURL() })
                     .setTimestamp();
             } else {
                 embed = errorEmbed('🎲 LOSOWANIE 🎲', '')
                     .setColor(0x2C2F33)
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n💎 *Zdobądź specjalną rangę, aby zwiększyć szanse!* 💎`)
+                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n💎 *Zdobądź <@&${PREMIUM_ROLE_ID}>, aby zwiększyć szanse!* 💎`)
                     .setFooter({ text: 'Zwykły drop • wracaj za godzinę', iconURL: interaction.client.user.displayAvatarURL() })
                     .setTimestamp();
             }
