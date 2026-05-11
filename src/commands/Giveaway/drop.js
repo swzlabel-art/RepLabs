@@ -11,7 +11,7 @@ const ALLOWED_CHANNEL_ID = '1503389299008082010'; // Tylko ten kanał
 export default {
     data: new SlashCommandBuilder()
         .setName("drop")
-        .setDescription("🎲 Spróbuj szczęścia! Możesz wygrać przedmiot (na razie tylko porażka).")
+        .setDescription("🎲 Spróbuj szczęścia! Możesz wygrać nagrody.")
         .setDefaultMemberPermissions(PermissionFlagsBits.SendMessages),
 
     async execute(interaction) {
