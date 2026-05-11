@@ -1,3 +1,8 @@
+// bootstrap.js must be the very first import so its top-level code (logs/
+// directory creation, env-var diagnostics, and fail-fast validation) runs
+// before any other module side-effects (Winston logger setup, config
+// validation, DB connection attempts, etc.).
+import './bootstrap.js';
 import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import { REST } from '@discordjs/rest';
@@ -12,9 +17,6 @@ import { logger, startupLog, shutdownLog } from './utils/logger.js';
 import { checkBirthdays } from './services/birthdayService.js';
 import { checkGiveaways } from './services/giveawayService.js';
 import { loadCommands, registerCommands as registerSlashCommands } from './handlers/commandLoader.js';
-
-// Usunięto linię z niezdefiniowaną zmienną 'file'
-console.log('Token pobrany z env:', process.env.DISCORD_TOKEN ? '✅ Jest' : '❌ BRAK');
 
 class TitanBot extends Client {
   constructor() {
@@ -84,6 +86,9 @@ class TitanBot extends Client {
       startupLog('Handlers loaded');
       
       startupLog('Logging into Discord...');
+      if (!this.config.bot.token) {
+        throw new Error('Discord token is undefined — check DISCORD_TOKEN environment variable');
+      }
       await this.login(this.config.bot.token);
       startupLog('Discord login successful');
       
@@ -101,6 +106,15 @@ class TitanBot extends Client {
       
       this.setupCronJobs();
     } catch (error) {
+      // Write to both the Winston logger (file transports) AND directly to
+      // stderr so the error is always visible in container/Railway logs even
+      // if the Winston file transports are not working.
+      console.error('[app] ❌ FATAL: Bot failed to start');
+      console.error('[app]   Error name   :', error.name);
+      console.error('[app]   Error message:', error.message);
+      if (error.code)  console.error('[app]   Error code   :', error.code);
+      if (error.status) console.error('[app]   HTTP status  :', error.status);
+      if (error.stack) console.error('[app]   Stack trace  :\n', error.stack);
       logger.error('Failed to start bot:', error);
       process.exit(1);
     }
@@ -366,11 +380,16 @@ try {
     process.on('SIGINT', () => bot.shutdown('SIGINT'));
     
     process.on('uncaughtException', (error) => {
+      console.error('[app] Uncaught Exception:', error.message);
+      if (error.stack) console.error(error.stack);
       logger.error('Uncaught Exception:', error);
       bot.shutdown('UNCAUGHT_EXCEPTION');
     });
     
     process.on('unhandledRejection', (reason, promise) => {
+      const msg = reason instanceof Error ? reason.message : String(reason);
+      console.error('[app] Unhandled Rejection:', msg);
+      if (reason instanceof Error && reason.stack) console.error(reason.stack);
       logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
       bot.shutdown('UNHANDLED_REJECTION');
     });
@@ -379,6 +398,10 @@ try {
   setupShutdown();
   bot.start();
 } catch (error) {
+  console.error('[app] ❌ FATAL: Synchronous error during bot initialisation');
+  console.error('[app]   Error name   :', error.name);
+  console.error('[app]   Error message:', error.message);
+  if (error.stack) console.error('[app]   Stack trace  :\n', error.stack);
   logger.error('Fatal error during bot startup:', error);
   process.exit(1);
 }
