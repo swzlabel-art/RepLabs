@@ -6,6 +6,7 @@ import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 const PREMIUM_ROLE_ID = '1465729118732554292';
 const ALLOWED_CHANNEL_ID = '1503389299008082010';
+const PREMIUM_INFO_CHANNEL_ID = '1465728344019439628'; // kanał gdzie zdobywasz rangę
 const COOLDOWN_MS = 3600000; // 1 godzina
 
 // Cooldown w pamięci (Map: userId -> timestamp)
@@ -76,14 +77,14 @@ export default {
                 embed = successEmbed('✨⭐ DROP PREMIUM ⭐✨', '')
                     .setColor(0xFFD700)
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n🌟 *Dzięki <@&${PREMIUM_ROLE_ID}> Twoje szanse są 2x większe!* 🌟`)
+                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n🌟 *Dzięki <@&${PREMIUM_ROLE_ID}> Twoje szanse są 2x większe!* 🌟\n💬 *Rangę możesz zdobyć na kanale <#${PREMIUM_INFO_CHANNEL_ID}>*`)
                     .setFooter({ text: 'Losowanie premium • wracaj za godzinę', iconURL: interaction.client.user.displayAvatarURL() })
                     .setTimestamp();
             } else {
                 embed = errorEmbed('🎲 LOSOWANIE 🎲', '')
                     .setColor(0x2C2F33)
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 256 }))
-                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n💎 *Zdobądź <@&${PREMIUM_ROLE_ID}>, aby zwiększyć szanse!* 💎`)
+                    .setDescription(`**${interaction.user}** niestety nie udało Ci się nic zdobyć.\nSpróbuj ponownie za **1 godzinę**.\n\n💎 *Zdobądź <@&${PREMIUM_ROLE_ID}>, aby zwiększyć szanse!* 💎\n📢 *Zdobądź tę rangę na kanale <#${PREMIUM_INFO_CHANNEL_ID}>*`)
                     .setFooter({ text: 'Zwykły drop • wracaj za godzinę', iconURL: interaction.client.user.displayAvatarURL() })
                     .setTimestamp();
             }
