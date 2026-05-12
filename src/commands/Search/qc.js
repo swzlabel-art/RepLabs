@@ -1,4 +1,4 @@
-// src/commands/Tools/qc.js
+// src/commands/search/qc.js
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { getFinalRedirectUrl, scrapeImagesFromUrl } from '../../utils/redirectScraper.js';
 import { InteractionHelper } from '../../utils/interactionHelper.js';
@@ -14,51 +14,44 @@ export default {
         ),
     
     async execute(interaction) {
-        // 1. Dajemy znać, że bot pracuje
         await InteractionHelper.safeDefer(interaction, { ephemeral: true });
         
         const userLink = interaction.options.getString('link');
         
-        // 2. Podążamy za przekierowaniami (ikako.vip -> uufinds.com)
+        // Podążamy za przekierowaniami (ikako.vip -> uufinds.com)
         const qcPageUrl = await getFinalRedirectUrl(userLink);
         
-        // 3. Jeżeli to nie jest link do uufinds.com, informujemy użytkownika
+        // Walidacja czy to link do uufinds.com
         if (!qcPageUrl.includes('uufinds.com')) {
             return InteractionHelper.safeEditReply(interaction, {
-                content: `❌ **Nieprawidłowy link.** \Nie mogę znaleźć strony z QC. Upewnij się, że podajesz link do produktu.`,
+                content: `❌ **Nieprawidłowy link.** Nie mogę znaleźć strony z QC. Upewnij się, że podajesz link do produktu.`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // 4. Pobieramy obrazki ze strony QC
+        // Pobieramy obrazki
         const images = await scrapeImagesFromUrl(qcPageUrl);
 
-        // 5. Sprawdzamy, czy udało się znaleźć jakieś obrazki
         if (!images || images.length === 0) {
             return InteractionHelper.safeEditReply(interaction, {
-                content: `😔 **Nie znaleziono obrazków.** \Nie udało mi się pobrać żadnych zdjęć dla linku: ${qcPageUrl}`,
+                content: `😔 **Nie znaleziono obrazków.** Nie udało mi się pobrać żadnych zdjęć dla linku: ${qcPageUrl}`,
                 flags: MessageFlags.Ephemeral
             });
         }
 
-        // 6. Wysyłamy znalezione obrazki w wiadomości prywatnej
+        // Wysyłamy na PW
         try {
-            // Najpierw wysyłamy opis
             await interaction.user.send(`📸 **Znalazłem ${images.length} obrazek(ów) dla Twojego zapytania:**\n${qcPageUrl}`);
-            
-            // Dla każdego obrazka tworzymy załącznik i wysyłamy
             for (const [index, buffer] of images.entries()) {
                 const attachment = { attachment: buffer, name: `qc_image_${index + 1}.png` };
                 await interaction.user.send({ files: [attachment] });
             }
 
-            // Potwierdzenie na kanale, że wszystko wysłane
             await InteractionHelper.safeEditReply(interaction, {
-                content: `✅ **Gotowe!** \Znalazłem ${images.length} obrazek(ów) i wysłałem je na Twoją skrzynkę PW. Sprawdź wiadomość prywatną ode mnie. \Adres strony: ${qcPageUrl}`,
+                content: `✅ **Gotowe!** Znalazłem ${images.length} obrazek(ów) i wysłałem je na Twoją skrzynkę PW. Sprawdź wiadomość prywatną ode mnie.\nAdres strony: ${qcPageUrl}`,
                 flags: MessageFlags.Ephemeral
             });
         } catch (dmError) {
-            // Obsługa błędu, gdy nie można wysłać PW
             console.error('Nie udało się wysłać PW:', dmError);
             await InteractionHelper.safeEditReply(interaction, {
                 content: `❌ **Nie mogę wysłać Ci wiadomości prywatnej.**\nOtwórz swoje ustawienia Discord: **Ustawienia Użytkownika → Prywatność i bezpieczeństwo → Zezwalaj na wiadomości prywatne od członków serwera** i spróbuj ponownie.`,
