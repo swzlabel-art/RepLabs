@@ -3,82 +3,88 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 
 /**
- * Funkcja pomocnicza: podąża za przekierowaniami linku i zwraca finalny URL.
- * @param {string} url - początkowy link (np. z ikako.vip)
- * @returns {Promise<string>} - ostateczny adres URL po wszystkich przekierowaniach
+ * Śledzi WSZYSTKIE przekierowania (wielokrotne) i zwraca ostateczny URL.
+ * @param {string} url - początkowy link
+ * @returns {Promise<string>} - finalny URL po wszystkich przekierowaniach
  */
 export async function getFinalRedirectUrl(url) {
-    try {
-        const response = await axios.get(url, {
-            maxRedirects: 0,         // Nie podążamy automatycznie
-            validateStatus: null,    // Akceptujemy każdy kod odpowiedzi HTTP
-            timeout: 10000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)'
+    let currentUrl = url;
+    const maxRedirects = 10;
+    for (let i = 0; i < maxRedirects; i++) {
+        try {
+            const response = await axios.get(currentUrl, {
+                maxRedirects: 0,
+                validateStatus: null,
+                timeout: 10000,
+                headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)' }
+            });
+            if (response.status >= 300 && response.status < 400 && response.headers.location) {
+                let redirectUrl = response.headers.location;
+                if (redirectUrl.startsWith('/')) {
+                    const urlObj = new URL(currentUrl);
+                    redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
+                } else if (!redirectUrl.startsWith('http')) {
+                    // relative path without leading slash
+                    const base = currentUrl.endsWith('/') ? currentUrl : currentUrl.substring(0, currentUrl.lastIndexOf('/') + 1);
+                    redirectUrl = new URL(redirectUrl, base).href;
+                }
+                currentUrl = redirectUrl;
+                continue;
             }
-        });
-
-        // Jeśli odpowiedź to przekierowanie (status 301, 302, itp.)
-        if (response.status >= 300 && response.status < 400 && response.headers.location) {
-            let redirectUrl = response.headers.location;
-            // W razie potrzeby dołączamy domenę, jeśli redirect jest względny
-            if (redirectUrl.startsWith('/')) {
-                const urlObj = new URL(url);
-                redirectUrl = `${urlObj.protocol}//${urlObj.host}${redirectUrl}`;
-            }
-            return redirectUrl;
+            return currentUrl;
+        } catch (error) {
+            console.error(`Błąd śledzenia przekierowań (${currentUrl}):`, error.message);
+            return currentUrl;
         }
-        return url;
-    } catch (error) {
-        // Obsługa błędów sieciowych
-        console.error(`Błąd podczas śledzenia przekierowań dla ${url}:`, error.message);
-        return url;
     }
+    return currentUrl;
 }
 
 /**
- * Pobiera maksymalnie 3 obrazki z podanej strony.
- * @param {string} pageUrl - adres strony (np. z uufinds.com)
- * @returns {Promise<Buffer[]>} - tablica buforów z obrazkami
+ * Pobiera maksymalnie 3 obrazki z podanej strony (zwraca buffery).
+ * Obsługuje zarówno <img src="">, jak i atrybuty lazy-loading (data-src, data-original).
+ * @param {string} pageUrl 
+ * @returns {Promise<Buffer[]>}
  */
 export async function scrapeImagesFromUrl(pageUrl) {
     try {
-        // 1. Pobieramy kod HTML strony
         const { data: html } = await axios.get(pageUrl, {
-            timeout: 10000,
+            timeout: 15000,
             headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)' }
         });
 
-        // 2. Ładujemy HTML do Cheerio, żeby łatwo go przeszukać
         const $ = cheerio.load(html);
-        const imageUrls = new Set(); // Używamy Set(), żeby uniknąć duplikatów
+        const imageUrls = new Set();
 
-        // 3. Szukamy wszystkich znaczników <img> i wyciągamy atrybut src
-        $('img').each((index, element) => {
-            let src = $(element).attr('src');
-            if (src && src.startsWith('http')) {
-                imageUrls.add(src);
+        // Szukamy obrazków w różnych atrybutach
+        $('img').each((_, el) => {
+            let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-original');
+            if (src) {
+                if (src.startsWith('//')) src = 'https:' + src;
+                else if (src.startsWith('/')) {
+                    const baseUrl = new URL(pageUrl);
+                    src = baseUrl.origin + src;
+                }
+                if (src.startsWith('http')) imageUrls.add(src);
             }
         });
 
-        // Jeśli nie znaleźliśmy żadnego obrazka, kończymy
         if (imageUrls.size === 0) return [];
 
-        // 4. Pobieramy pierwsze 3 obrazki jako buffery
         const imageBuffers = [];
         for (const url of [...imageUrls].slice(0, 3)) {
             try {
                 const response = await axios.get(url, {
-                    responseType: 'arraybuffer', // Pobieramy jako binarny bufor
-                    timeout: 8000
+                    responseType: 'arraybuffer',
+                    timeout: 8000,
+                    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; DiscordBot/1.0)' }
                 });
-                // Sprawdzamy, czy to na pewno obrazek
                 const contentType = response.headers['content-type'];
                 if (contentType && contentType.startsWith('image/')) {
                     imageBuffers.push(response.data);
                 }
             } catch (err) {
-                console.error(`Błąd przy pobieraniu obrazka: ${url}`, err.message);
+                console.error(`Błąd pobierania obrazka ${url}:`, err.message);
             }
         }
         return imageBuffers;
